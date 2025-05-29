@@ -2,6 +2,17 @@ const { chromium } = require('playwright');
 const fs = require('fs').promises;
 const XLSX = require('xlsx');
 
+/**
+ * TenderScraper Class
+ * Purpose: Manages web scraping operations for tender information from alertalicitacao.com.br
+ * 
+ * Properties:
+ * - baseUrl: Base URL of the target website
+ * - browser: Playwright browser instance
+ * - context: Browser context for managing sessions
+ * - page: Current browser page
+ */
+
 class TenderScraper {
     constructor() {
         this.baseUrl = 'https://alertalicitacao.com.br';
@@ -10,6 +21,13 @@ class TenderScraper {
         this.page = null;
     }
 
+    /**
+     * init()
+     * Purpose: Initializes the browser and creates a new page for scraping
+     * Input: None
+     * Output: Promise<void>
+     * Throws: Browser initialization errors
+     */
     async init() {
         this.browser = await chromium.launch({
             headless: false // Set to false to see the browser in action
@@ -18,30 +36,48 @@ class TenderScraper {
         this.page = await this.context.newPage();
     }
 
+    /**
+     * close()
+     * Purpose: Cleans up browser resources and closes all connections
+     * Input: None
+     * Output: Promise<void>
+     * Note: Safe to call even if browser or context is null
+     */
     async close() {
         await this.context?.close();
         await this.browser?.close();
     }
 
+    /**
+     * searchTenders(keyword)
+     * Purpose: Searches for tenders using the provided keyword
+     * Input: 
+     *   - keyword (string): Search term for finding tenders
+     * Output: Promise<Array<Object>>
+     *   Returns array of tender objects with structure:
+     *   {
+     *     title: string,
+     *     link: string,
+     *     organization: string,
+     *     openingDate: string,
+     *     estimatedValue: string
+     *   }
+     * Side Effects:
+     *   - Saves results to JSON file with timestamp
+     *   - Creates error_page.html on failure
+     */
     async searchTenders(keyword) {
         try {
             console.log(`Searching for: ${keyword}`);
-
-            // Navigate to the main page
             await this.page.goto(this.baseUrl);
-
-            // Find the search input using role
             const searchInput = await this.page.getByRole('textbox', { name: 'Procurar...' });
             await searchInput.fill(keyword);
 
-            // Find and click the search button using role
             const searchButton = await this.page.getByRole('button', { name: '' }); // Empty name because it's an icon button
             await searchButton.click();
 
-            // Extract the results
             const results = await this.extractResults();
 
-            // Save results to file
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const filename = `results/tender_results_${timestamp}.json`;
             await this.saveResults(results, filename);
@@ -50,7 +86,7 @@ class TenderScraper {
 
         } catch (error) {
             console.error('Error during search:', error);
-            // Save the page content for debugging
+
             await this.page.content().then(content => 
                 fs.writeFile('error_page.html', content, 'utf8')
             ).catch(console.error);
@@ -58,6 +94,19 @@ class TenderScraper {
         }
     }
 
+    /**
+     * extractResults()
+     * Purpose: Extracts tender information from the search results page
+     * Input: None (uses current page state)
+     * Output: Promise<Array<Object>>
+     *   Returns array of tender objects containing:
+     *   - title: Tender title
+     *   - link: Direct URL to tender
+     *   - organization: Organization name
+     *   - openingDate: Tender opening date
+     *   - estimatedValue: Estimated tender value
+     * Note: Handles missing data gracefully, continues on per-panel errors
+     */
     async extractResults() {
         const panels = await this.page.locator('div.panel').all();
         const results = [];
@@ -114,6 +163,15 @@ class TenderScraper {
         return results;
     }
 
+    /**
+     * saveResults(results, filename)
+     * Purpose: Saves scraped results to a JSON file
+     * Input:
+     *   - results: Array<Object> - Array of tender objects
+     *   - filename: string - Path where to save the JSON file
+     * Output: Promise<void>
+     * Format: JSON with 2-space indentation
+     */
     async saveResults(results, filename) {
         await fs.writeFile(
             filename,
@@ -123,18 +181,20 @@ class TenderScraper {
         console.log(`Results saved to ${filename}`);
     }
 
+    /**
+     * saveToExcel(results, filename)
+     * Purpose: Converts and saves tender results to Excel format
+     * Input:
+     *   - results: Array<Object> - Array of tender objects
+     *   - filename: string - Path where to save the Excel file
+     * Output: Promise<void>
+     * Format: XLSX file with 'Tenders' worksheet
+     */
     async saveToExcel(results, filename) {
         try {
-            // Create a new workbook
             const workbook = XLSX.utils.book_new();
-            
-            // Convert results to worksheet
             const worksheet = XLSX.utils.json_to_sheet(results);
-            
-            // Add the worksheet to the workbook
             XLSX.utils.book_append_sheet(workbook, worksheet, 'Tenders');
-            
-            // Save the workbook
             XLSX.writeFile(workbook, filename);
             
             console.log(`Results saved to ${filename}`);
@@ -144,6 +204,18 @@ class TenderScraper {
     }
 }
 
+/**
+ * main()
+ * Purpose: Orchestrates the scraping process
+ * Input: None
+ * Output: Promise<void>
+ * Process Flow:
+ * 1. Initializes scraper
+ * 2. Performs search with keyword 'catarata'
+ * 3. Saves results to both JSON and Excel
+ * 4. Handles cleanup in all cases
+ * Error Handling: Logs errors and ensures browser cleanup
+ */
 async function main() {
     const scraper = new TenderScraper();
     
@@ -154,7 +226,6 @@ async function main() {
         const results = await scraper.searchTenders(searchKeyword);
         
         if (results.length > 0) {
-            // Save to Excel with timestamp
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const excelFilename = `results/tender_results_${timestamp}.xlsx`;
             await scraper.saveToExcel(results, excelFilename);
@@ -171,5 +242,4 @@ async function main() {
     }
 }
 
-// Run the scraper
 main().catch(console.error);
