@@ -1,5 +1,6 @@
 const { chromium } = require('playwright');
 const fs = require('fs').promises;
+const XLSX = require('xlsx');
 
 class TenderScraper {
     constructor() {
@@ -37,15 +38,12 @@ class TenderScraper {
             const searchButton = await this.page.getByRole('button', { name: '' }); // Empty name because it's an icon button
             await searchButton.click();
 
-            // // Wait for content to load using role
-            // await this.page.getByRole('article').first().waitFor();
-
             // Extract the results
             const results = await this.extractResults();
 
             // Save results to file
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const filename = `tender_results_${timestamp}.json`;
+            const filename = `results/tender_results_${timestamp}.json`;
             await this.saveResults(results, filename);
 
             return results;
@@ -66,7 +64,6 @@ class TenderScraper {
     
         for (const panel of panels) {
             try {
-                // Get title and link
                 const titleLink = await panel.getByRole('link').first();
                 const title = await titleLink.textContent();
                 const onlyLink = await titleLink.getAttribute('href');
@@ -96,8 +93,6 @@ class TenderScraper {
                 const dateElement = await panel.getByText(/Abertura|Data de abertura/, { exact: false });
                 const openingDate = await dateElement.locator('..').textContent()
                     .then(text => text.replace(/Abertura:|Data de abertura:/g, '').trim());
-                
-                console.log("openingDate", openingDate);
 
                 const valueElement = await panel.getByText('Valor:', { exact: false }).first();
                 const estimatedValue = await valueElement.locator('..').textContent()
@@ -127,6 +122,26 @@ class TenderScraper {
         );
         console.log(`Results saved to ${filename}`);
     }
+
+    async saveToExcel(results, filename) {
+        try {
+            // Create a new workbook
+            const workbook = XLSX.utils.book_new();
+            
+            // Convert results to worksheet
+            const worksheet = XLSX.utils.json_to_sheet(results);
+            
+            // Add the worksheet to the workbook
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Tenders');
+            
+            // Save the workbook
+            XLSX.writeFile(workbook, filename);
+            
+            console.log(`Results saved to ${filename}`);
+        } catch (error) {
+            console.error('Error saving to Excel:', error);
+        }
+    }
 }
 
 async function main() {
@@ -135,14 +150,16 @@ async function main() {
     try {
         await scraper.init();
         
-        // You can modify the search keyword here
         const searchKeyword = 'catarata';
-        
         const results = await scraper.searchTenders(searchKeyword);
         
         if (results.length > 0) {
-            console.log(`\n${results.length} results found:`);
-            console.log(JSON.stringify(results, null, 2));
+            // Save to Excel with timestamp
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const excelFilename = `results/tender_results_${timestamp}.xlsx`;
+            await scraper.saveToExcel(results, excelFilename);
+            
+            console.log(`\n${results.length} results found and saved to Excel`);
         } else {
             console.log('No results found');
         }
