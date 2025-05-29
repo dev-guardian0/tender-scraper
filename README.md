@@ -158,10 +158,6 @@ Output files are automatically named with timestamps:
 4. Push to the branch
 5. Create a Pull Request
 
-## License
-
-[Your License Here]
-
 ## Support
 
 For issues and feature requests, please create an issue in the repository.
